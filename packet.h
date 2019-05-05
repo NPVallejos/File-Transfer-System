@@ -7,7 +7,7 @@
 */
 typedef struct {
 	short opcode;
-	short sequenceNumber;
+	unsigned int sequenceNumber;
 } Header;
 
 typedef struct {

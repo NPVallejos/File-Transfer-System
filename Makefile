@@ -6,10 +6,10 @@ server:	server.o
 client:	client.o
 	gcc client.o -o client
 
-server.o:	server.c
+server.o:	server.c packet.h
 	gcc -Wall -Wextra -Wpedantic -c server.c
 
-client.o:	client.c
+client.o:	client.c packet.h
 	gcc -Wall -Wextra -Wpedantic -c client.c
 	
 clean:

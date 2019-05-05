@@ -86,21 +86,25 @@ main(int argc, char ** argv) {
 	int filesize = 0;
 	int last_seqnum = -1;
 	int c = 0;
+	int filetype = 0;
 	FILE * fptr = NULL;
 	while ((bytes = recvfrom (sockfd, &packet, sizeof (packet), 0, (struct sockaddr *)&client, &alen)) != -1) {	
-		if (c >= 14) {	}//break; }
+		//if (c >= 14) {	}//break; }
 		if (sizeof packet != 1500) { continue; }
-		char dummy[128];
-
+		//char dummy[128];
+		//printf("%d, %d\n", packet.hp.opcode, packet.hp.sequenceNumber);
 		switch (packet.hp.opcode) {
 			case 1:
+				{
+				//printf("Received packet %d\n", packet.hp.sequenceNumber);
 				// WRQ - write data to file
 				if (packet.hp.sequenceNumber != last_seqnum) {
 					++c;
 					last_seqnum = packet.hp.sequenceNumber;
 					
 					if (fptr != NULL) {
-						fwrite(packet.data, sizeof(char), strlen(packet.data), fptr);
+						if (filetype == 0) { fwrite(packet.data, sizeof(char), strlen(packet.data), fptr); }
+						else { fwrite(packet.data, 1, strlen(packet.data), fptr); }
 					}
 
 					/* Client information */
@@ -119,8 +123,10 @@ main(int argc, char ** argv) {
 				sendpack.hp.opcode = 0;
 				sendpack.hp.sequenceNumber = packet.hp.sequenceNumber;
 				sendto (sockfd, &sendpack, sizeof (sendpack), 0, (struct sockaddr *)&client, alen);
+				}
 				break;
 			case 2:
+				{
 				// RRQ - read data -> contains filename and filesize
 				filename = strtok(packet.data, "\t");
 				filesize = atoi(strtok(NULL, "\t"));
@@ -131,17 +137,26 @@ main(int argc, char ** argv) {
 					++result;
 					if (strcmp(result, "txt") == 0) {
 						fptr = fopen("test.txt", "w");
+						filetype = 0;
 					}
-					else if (strcmp("test.mp4", "mp4") == 0) {
-						fptr = fopen(filename, "wb");
+					else if (strcmp(result, "mp4") == 0) {
+						//printf("Opening %s for writing in binary\n", filename);
+						fptr = fopen("test.mp4", "wb");
+						filetype = 1;
 					}
+				}
+
+				Packet sendpack;
+				sendpack.hp.opcode = 0;
+				sendpack.hp.sequenceNumber = packet.hp.sequenceNumber;
+				sendto (sockfd, &sendpack, sizeof (sendpack), 0, (struct sockaddr *)&client, alen);
 				}
 				break;
 			default:
 				printf("Done\n");
 				return 0;
 		}
-		bzero(dummy, sizeof dummy);
+		//bzero(dummy, sizeof dummy);
     }
 
 	fclose(fptr);
