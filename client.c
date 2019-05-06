@@ -27,7 +27,7 @@ main(int argc, char ** argv) {
 #endif
 
 	int sockfd; // this will hold our socket file description	
-	unsigned int bytes;	// total number of bytes sent
+	int bytes;	// total number of bytes sent
 
 	struct sockaddr_in servaddr; // holds server information
 	socklen_t alen; 	// hold servaddr size
@@ -38,7 +38,6 @@ main(int argc, char ** argv) {
 	FILE * fptr = NULL;	// Used for opening the file
 	const char * filename = argv[1];	// hold filename
 	int filesize; // Used for determining the number of packets needed for file transfer
-	int filetype;	// Used for switch case later when parsing file
 	//char buffer[MAX]; // Used for reading file
 	unsigned int totalpackets;
 	int remainder = 0; // filesize % MAX-1 bytes leftover (if any)
@@ -71,9 +70,9 @@ main(int argc, char ** argv) {
 	++totalpackets; // increment one more time for a packet that contains filename and filesize
 	
 	// Pinting out some information
-	printf("totalpackets=%lu\n", totalpackets);
-	printf("remainder=%d\n", remainder);	
-	printf("MAX=%lu\n", MAX);
+	printf("totalpackets=%u\n", totalpackets);
+	printf("remainder=%d bytes\n", remainder);	
+	printf("packet.data MAX length =%lu\n", MAX);
 
 	/* Step 1: Create the socket */
 	if ((sockfd = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -106,6 +105,8 @@ main(int argc, char ** argv) {
 	printf("Server Host Name: %s\n", hp->h_name);
 	
 	alen = sizeof (servaddr);
+
+	printf("******************************[Reading File & Sending Packets]******************************\n");
 
 	/* Step 3: Send packets to server */
 	unsigned int count = 0;
@@ -154,13 +155,15 @@ main(int argc, char ** argv) {
 
 		// Now we send the packet and wait for an ACK (loop until ACK found)
 		while (1) {
+			printf("Sending packet %u. ", packet.hp.sequenceNumber);
 			/* Sending packet to server */
 			if (sendto (sockfd, &packet, sizeof packet, 0, (struct sockaddr *)&servaddr, alen) == -1) {
 				perror("sendto, client-side");
 				close(sockfd);
 				return 0;
 			}
-
+			
+			printf("Waiting for ACK...");
 			/* Waiting for ACK packet from server */
 			if ((bytes = recvfrom (sockfd, &ack, sizeof ack, 0, (struct sockaddr *)&servaddr, &alen)) == -1) {
 				printf("Did not receive ACK...trying again\n");
@@ -169,6 +172,7 @@ main(int argc, char ** argv) {
 				
 			/* Check if ACK packet contains same sequenceNumber */
 			if (ack.hp.opcode == 0 && ack.hp.sequenceNumber == packet.hp.sequenceNumber) {
+				printf("ACK received.\n");
 				break;
 			}
 		}
