@@ -41,6 +41,7 @@ main(int argc, char ** argv) {
 	int sockoptval = 1; 	// used in conjunction with setsockopt
 	Packet packet;// = malloc (sizeof (Packet *));
 	char message[MAX];
+//	int remainder;
 	
 	// Step 1: Create a socket
 	if ((sockfd = socket (AF_INET, SOCK_DGRAM, 0)) < 0) { // May have issues with setting protocol to 0
@@ -84,6 +85,8 @@ main(int argc, char ** argv) {
 	/* Step 3: obtain data from client - recvfrom should be blocking AND should loop until server receives a packet with less than the size of a normal data block */
 	char * filename = malloc (sizeof (char *));
 	int filesize = 0;
+	int remainder = 0;
+	int totalpackets = 0;
 	int last_seqnum = -1;
 	int c = 0;
 	int filetype = 0;
@@ -104,7 +107,10 @@ main(int argc, char ** argv) {
 					
 					if (fptr != NULL) {
 						if (filetype == 0) { fwrite(packet.data, sizeof(char), strlen(packet.data), fptr); }
-						else { fwrite(packet.data, 1, strlen(packet.data), fptr); }
+						else { 
+							if (c == totalpackets - 1 && remainder > 0) { fwrite(packet.data,  1, remainder, fptr); }
+							else { fwrite(packet.data,  1, bytes-sizeof (Header) - 1, fptr); }
+						}
 					}
 
 					/* Client information */
@@ -129,19 +135,22 @@ main(int argc, char ** argv) {
 				{
 				// RRQ - read data -> contains filename and filesize
 				filename = strtok(packet.data, "\t");
-				filesize = atoi(strtok(NULL, "\t"));
-			
+				totalpackets = atoi(strtok(NULL, "\t"));
+				remainder = atoi(strtok(NULL, "\t"));
+
+				//printf("totalpackets=%d, remainder = %d\n", totalpackets, remainder);
+				//return 0;	
 				/* Here we figure out what type of file we are writing to */
 				const char * result;
 				if ((result = strchr(filename, '.')) != NULL) {
 					++result;
 					if (strcmp(result, "txt") == 0) {
-						fptr = fopen("test.txt", "w");
+						fptr = fopen(filename, "w");
 						filetype = 0;
 					}
 					else if (strcmp(result, "mp4") == 0) {
 						//printf("Opening %s for writing in binary\n", filename);
-						fptr = fopen("test.mp4", "wb");
+						fptr = fopen(filename, "wb");
 						filetype = 1;
 					}
 				}

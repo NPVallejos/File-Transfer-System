@@ -1,5 +1,4 @@
 #define MAX 1500 - sizeof(Header)
-
 /* opcode information:
 	0 - ACK
 	1 - WRQ
@@ -7,10 +6,10 @@
 */
 typedef struct {
 	short opcode;
-	unsigned int sequenceNumber;
+	int sequenceNumber;
 } Header;
 
 typedef struct {
 	Header hp;
-	char data[MAX];
+	unsigned char data[MAX];
 } Packet;
