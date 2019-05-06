@@ -1,16 +1,16 @@
 all: server client
 
 server:	server.o
-	gcc server.o -o server
+	gcc nicholasvallejos_server.o -o server
 
 client:	client.o
-	gcc client.o -o client
+	gcc nicholasvallejos_client.o -o client
 
-server.o:	server.c packet.h
-	gcc -Wall -Wextra -Wpedantic -c server.c
+server.o:	nicholasvallejos_server.c packet.h
+	gcc -c nicholasvallejos_server.c
 
-client.o:	client.c packet.h
-	gcc -Wall -Wextra -Wpedantic -c client.c
+client.o:	nicholasvallejos_client.c packet.h
+	gcc -c nicholasvallejos_client.c
 	
 clean:
 	rm -f *.o server client
