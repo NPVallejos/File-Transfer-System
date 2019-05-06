@@ -1,8 +1,3 @@
-/* Server needs to retrieve its information,
-	Neeed to create a socket()
-	Need to bind() sockfd 
-	Use recvfrom() to get data and store the numbytes that this returns to guarantee is 1500 B - also should define a MAXBUFFLENGTH */
-	
 #include <sys/socket.h>	// needed for socket functions & recvfrom
 #include <sys/types.h>	// neeeded for socket functions & recvfrom
 #include <netinet/in.h> // for printing an internet address
@@ -19,10 +14,6 @@
 
 #define TIMEOUT 100000
 
-void * get(struct sockaddr *s) {
-	return &(((struct sockaddr_in *)s)->sin_addr);
-}
-
 int 
 main(int argc, char ** argv) {
 	if (argc < 2) {
@@ -38,10 +29,7 @@ main(int argc, char ** argv) {
 	struct sockaddr_in myaddr; // holds information about this server 
 	struct sockaddr_in	client; // holds client addr
 	socklen_t alen; 		// length of a single client address struct
-	int sockoptval = 1; 	// used in conjunction with setsockopt
 	Packet packet;// = malloc (sizeof (Packet *));
-	char message[MAX];
-//	int remainder;
 	
 	// Step 1: Create a socket
 	if ((sockfd = socket (AF_INET, SOCK_DGRAM, 0)) < 0) { // May have issues with setting protocol to 0
@@ -49,9 +37,6 @@ main(int argc, char ** argv) {
 		close(sockfd);
 		return 0;
 	}
-	
-	// allow immediate reuse of PORT
-//	setsockopt (sockfd, SOL_SOCKET, SO_REUSEADDR, &sockoptval, sizeof(int));
 
 	/* Step 2: Identify (name) a socket */
 	memset ((char *) &myaddr, 0, sizeof(myaddr));
@@ -84,91 +69,71 @@ main(int argc, char ** argv) {
 	
 	/* Step 3: obtain data from client - recvfrom should be blocking AND should loop until server receives a packet with less than the size of a normal data block */
 	char * filename = malloc (sizeof (char *));
-	int filesize = 0;
-	int remainder = 0;
-	int totalpackets = 0;
-	int last_seqnum = -1;
-	int c = 0;
-	int filetype = 0;
-	FILE * fptr = NULL;
-	while ((bytes = recvfrom (sockfd, &packet, sizeof (packet), 0, (struct sockaddr *)&client, &alen)) != -1) {	
-		//if (c >= 14) {	}//break; }
-		if (sizeof packet != 1500) { continue; }
-		//char dummy[128];
-		//printf("%d, %d\n", packet.hp.opcode, packet.hp.sequenceNumber);
+	int remainder = 0;		// Hold how many bytes of data are being sent in the last packet when filesize % MAX-1 != 0
+	int totalpackets = 0;	// Hold how many unique packets are being sent
+	int last_seqnum = -1;	// Keep track of the last frame number 
+	int c = 0;				// Keep track of how many packets we have received so far
+	FILE * fptr = NULL;		// File pointer
+
+	while ((bytes = recvfrom (sockfd, &packet, sizeof (packet), 0, (struct sockaddr *)&client, &alen)) != -1) {
+		//if (sizeof packet != 1500) { continue; }
 		switch (packet.hp.opcode) {
 			case 1:
 				{
-				//printf("Received packet %d\n", packet.hp.sequenceNumber);
-				// WRQ - write data to file
-				if (packet.hp.sequenceNumber != last_seqnum) {
-					++c;
-					last_seqnum = packet.hp.sequenceNumber;
-					
-					if (fptr != NULL) {
-						if (filetype == 0) { fwrite(packet.data, sizeof(char), strlen(packet.data), fptr); }
-						else { 
+					if (strlen(packet.data) == 0) {
+						printf("empty packet");
+					}
+					// WRQ - write data to file
+					if (packet.hp.sequenceNumber != last_seqnum) {
+						++c;
+						last_seqnum = packet.hp.sequenceNumber;
+							
+						if (fptr != NULL) {
 							if (c == totalpackets - 1 && remainder > 0) { fwrite(packet.data,  1, remainder, fptr); }
 							else { fwrite(packet.data,  1, bytes-sizeof (Header) - 1, fptr); }
 						}
 					}
+					else {
+						printf("resending ACK\n");
+					}
 
-					/* Client information */
-					//printf("Client Information: %s\n", inet_ntop(client.ss_family, 
-					//										get((struct sockaddr *)&client), 
-					//										dummy, sizeof dummy)); // converting client info from network to printable
-					/* Message information */
-					//printf("=========\n%s", packet.data);
-					// ERROR: strlen(packet.data returns 1497 and packet.data does not return the last character)
-					//printf("Packet Length = %d bytes\nPacket data length = %d\nPacket content: \n%s\n", bytes, strlen(packet.data), packet.data);
-				}
-				else {
-					printf("resending ACK\n");
-				}
-				Packet sendpack;
-				sendpack.hp.opcode = 0;
-				sendpack.hp.sequenceNumber = packet.hp.sequenceNumber;
-				sendto (sockfd, &sendpack, sizeof (sendpack), 0, (struct sockaddr *)&client, alen);
+					// Sending packet with ACK
+					Packet sendpack;
+					sendpack.hp.opcode = 0;
+					sendpack.hp.sequenceNumber = packet.hp.sequenceNumber;
+					sendto (sockfd, &sendpack, sizeof (sendpack), 0, (struct sockaddr *)&client, alen);
 				}
 				break;
 			case 2:
 				{
-				// RRQ - read data -> contains filename and filesize
-				filename = strtok(packet.data, "\t");
-				totalpackets = atoi(strtok(NULL, "\t"));
-				remainder = atoi(strtok(NULL, "\t"));
-
-				//printf("totalpackets=%d, remainder = %d\n", totalpackets, remainder);
-				//return 0;	
-				/* Here we figure out what type of file we are writing to */
-				const char * result;
-				if ((result = strchr(filename, '.')) != NULL) {
-					++result;
-					if (strcmp(result, "txt") == 0) {
-						fptr = fopen(filename, "w");
-						filetype = 0;
+					// RRQ - read data -> contains filename and filesize
+					filename = strtok(packet.data, "\t");
+					totalpackets = atoi(strtok(NULL, "\t"));
+					remainder = atoi(strtok(NULL, "\t"));
+					printf("filename=%s\n", filename);
+					// Opening file
+					fptr = fopen(filename, "wb");
+					
+					if (fptr == NULL) {
+						perror("failed to open file");
+						return 0;
 					}
-					else if (strcmp(result, "mp4") == 0) {
-						//printf("Opening %s for writing in binary\n", filename);
-						fptr = fopen(filename, "wb");
-						filetype = 1;
-					}
-				}
 
-				Packet sendpack;
-				sendpack.hp.opcode = 0;
-				sendpack.hp.sequenceNumber = packet.hp.sequenceNumber;
-				sendto (sockfd, &sendpack, sizeof (sendpack), 0, (struct sockaddr *)&client, alen);
+					// Sending packet with ACK
+					Packet sendpack;
+					sendpack.hp.opcode = 0;
+					sendpack.hp.sequenceNumber = packet.hp.sequenceNumber;
+					sendto (sockfd, &sendpack, sizeof (sendpack), 0, (struct sockaddr *)&client, alen);
 				}
 				break;
 			default:
 				printf("Done\n");
 				return 0;
 		}
-		//bzero(dummy, sizeof dummy);
     }
 
-	fclose(fptr);
-	close(sockfd); // close the listening socket
+	free (filename);
+	fclose(fptr); 	// close the file
+	close(sockfd); 	// close the listening socket
 	return 0;
 }

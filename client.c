@@ -12,9 +12,8 @@
 #include <sys/time.h>	// for struct timeval
 #include "packet.h"		// includes definition for Packet struct and contains MAX macro
 
-#define NDEBUG 0 // Enables debug printf's that I wrote
-#define PACKET 1 // This will print the packet size (line 35)
-#define TIMEOUT 5
+#define PACKET 1 	// This will print the packet size (line 35)
+#define TIMEOUT 5	// Specifies how many seconds to wait for timeout mechanism
 
 int 
 main(int argc, char ** argv) {
@@ -40,31 +39,19 @@ main(int argc, char ** argv) {
 	const char * filename = argv[1];	// hold filename
 	int filesize; // Used for determining the number of packets needed for file transfer
 	int filetype;	// Used for switch case later when parsing file
-	char buffer[MAX]; // Used for reading file
+	//char buffer[MAX]; // Used for reading file
 	unsigned int totalpackets;
-	int remainder = 0;
+	int remainder = 0; // filesize % MAX-1 bytes leftover (if any)
 
-	struct timeval tv; // Used for timeout mechanism
+	/* Setting up timer for timeout mechanism */
+	struct timeval tv; 
 	tv.tv_sec = TIMEOUT;
 	tv.tv_usec = 0;
-
-	/* Here we figure out what type of file we are reading from */
-	const char * result; // temp variable used for strchr()
-	if ((result = strchr(filename, '.')) != NULL) {
-		printf("-------------------------\n ");
-		++result;
-		if (strcmp(result, "txt") == 0) {
-			printf("Text file received\n ");
-			fptr = fopen(filename, "r");
-			filetype = 0;
-		}
-		else if (strcmp (result, "mp4") == 0) {
-			printf("MP4 file received\n ");
-			fptr = fopen(filename, "rb");
-			filetype = 1;
-		}
-	}
 	
+	/* Opening the file */
+	fptr = fopen(filename, "rb");
+	
+	/* Check if file was opened successfully*/
 	if (fptr == NULL) {
 		perror ("Could not open the file");
 		fclose(fptr);
@@ -78,64 +65,16 @@ main(int argc, char ** argv) {
 	printf(" Filesize = %d bytes\n", filesize);
 	printf("-------------------------\n\n");
 
-	/* Divide file into packets */
+	/* Figure out how many packets are needed based on filesize */
 	totalpackets = filesize / (MAX-1);
 	if ((remainder = filesize % (MAX-1)) > 0) { ++totalpackets; } // if filesize is not evenly divisible by MAX size then we increment totalpackets by 1
-	
-	
 	++totalpackets; // increment one more time for a packet that contains filename and filesize
 	
-	/* 
-	   Now we can get our Packets ready for sending 
-	   Note: packets[0] is reserved for holding filename & filesize
-	*/	
+	// Pinting out some information
 	printf("totalpackets=%lu\n", totalpackets);
-	printf("remainder=%d\n", remainder);
-
-#if 0
-	Packet packets[totalpackets];
-	printf("remainder=%d\n", remainder);
-	unsigned int count;
-	
-	/* Initialize all fields */
-	for (count = 0; count < totalpackets; ++count) {
-		if (count != 0) {
-			packets[count].hp.opcode = 1; // Make packets WRQ
-			packets[count].hp.sequenceNumber = count; // Order by index
-			memset(packets[count].data, 0, MAX); // zero out char array
-			//printf("%s\n",packets[count].data);
-		}
-		else {
-			packets[count].hp.opcode = 2; // Make packet[0]  RRQ
-			packets[count].hp.sequenceNumber = count; // Order by index
-			memset(packets[count].data, 0, MAX); // zero out char array
-
-			char * str = malloc (sizeof (char *));
-			sprintf(str, "%d", filesize);
-
-			/* packet[0].data => "<filename>\t<filesize>"*/
-			strcat(packets[count].data, filename); 
-			strcat(packets[count].data, "\t");
-			strcat(packets[count].data, str);
-			
-			free(str);
-		}
-	}
-#endif
-
-
+	printf("remainder=%d\n", remainder);	
 	printf("MAX=%lu\n", MAX);
 
-#if 0
-	printf("sizeof packets[%d].data = %lu\n", totalpackets-1, strlen(packets[totalpackets-1].data));
-	printf("sizeof packets[%d].data = %lu\n", totalpackets-2, strlen(packets[totalpackets-2].data));
-#endif
-
-//	for (count = 0; count < totalpackets; ++count) {
-//		printf("count=%d, %d, ", count, packets[count].hp.opcode); // Make packets WRQ
-//		printf("%d\n", packets[count].hp.sequenceNumber); // Order by index
-//	}
-	
 	/* Step 1: Create the socket */
 	if ((sockfd = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror ("cannot create socket");
@@ -143,7 +82,7 @@ main(int argc, char ** argv) {
 		return 0;
 	}
 	
-	// Make the recvfrom sockfd[1] able to timeout
+	// Make the recvfrom sockfd able to timeout using SO_RCVTIMEO and struct timeval "tv"
 	if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) < 0) {
 		perror ("setsockopt failed");
 		close(sockfd);
@@ -168,314 +107,77 @@ main(int argc, char ** argv) {
 	
 	alen = sizeof (servaddr);
 
+	/* Step 3: Send packets to server */
 	unsigned int count = 0;
 	while (count < totalpackets) {
-		#if NDEBUG
-			printf("iteration %d\n", count);
-		#endif
-		bytes = 0;
-		switch (filetype) {
-			case 0:
-					{
-						// Setup our packet
-						Packet packet;
-						Packet ack;
-						if (count != 0) {
-							packet.hp.opcode = 1; // Make packets WRQ
-							packet.hp.sequenceNumber = count; // Order by index
-							memset(packet.data, 0, MAX); // zero out char array
-							//printf("%s\n",packets[count].data);
-						}
-						else {
-							packet.hp.opcode = 2; // Make packet[0]  RRQ
-							packet.hp.sequenceNumber = count; // Order by index
-							memset(packet.data, 0, MAX); // zero out char array
+		Packet packet;  // Packet to send out
+		Packet ack;		// Packet received from server
+				
+		if (count == 0) {
+			/* Creating packet that holds filename, totalpackets, and "remainder" bytes (if any) */
+			packet.hp.opcode = 2; // Make packet  RRQ
+			packet.hp.sequenceNumber = count; // Order by index
+			memset(packet.data, 0, MAX); // zero out char array
 
 
-							/* packet[0].data => "<filename>\t<filesize>"*/
-							strcat(packet.data, filename); 
-							strcat(packet.data, "\t");
-
-							char * str = malloc (sizeof (char *));
-							
-							sprintf(str, "%d", totalpackets);
-							strcat(packet.data, "\t");
-							strcat(packet.data, str);
-							
-							sprintf(str, "%d", remainder);
-							strcat(packet.data, "\t");
-							strcat(packet.data, str);
+			/* This is what packet.data will look like after this block of code => "<filename>\t<totalpackets>\t<remainder>"*/
+			strcat(packet.data, filename); 
+			strcat(packet.data, "\t");
 					
-							free(str);
-						}
-
-						// Actually reading the file here
-						while (strlen(packet.data) < MAX-1 && count != 0) {
-							char * s = fgets(buffer, 2, fptr); 
-							//bytes += strlen(buffer);
-							//printf("BEFORE:\nsizeof data==%d\n", strlen(packets[count].data));
-							if (MAX-strlen(packet.data) == 1) {
-								printf("buffer=%s\n", s);
-								break;
-							}
-							strcat(packet.data, buffer); // append lines to char data array
-							//printf("AFTER:\nsizeof data==%lu\n", strlen(packets[count].data));
-							if (MAX-strlen(packet.data) == 1) {
-							//	printf("buffer=%s\n", buffer);
-								//return 0;
-							}
-							//packets[count].hp.opcode = 1;
-							bzero(buffer, MAX);
-							if (count == totalpackets-1 && strlen(packet.data) > remainder-1) {
-								break;
-							}
-						}
-						//printf("packet=%s\n", packet.data);
-						// Now we send the packet and wait for an ACK (loop until ACK found)
-						while (1) {
-								//printf("%lu\n", sizeof packets[count].data);
-								/* Sending data to server using packets */
-								if ((bytes = sendto (sockfd, &packet, sizeof packet, 0, (struct sockaddr *)&servaddr, alen)) == -1) {
-									perror("sendto, client-side");
-									close(sockfd);
-									return 0;
-								}
-
-								//printf("Sent to client\n");
-								/* TODO: add a time-out mechanism using pthreads */
-								/* Waiting for ACK from server */
-								if ((bytes = recvfrom (sockfd, &ack, sizeof ack, 0, (struct sockaddr *)&servaddr, &alen)) == -1) {
-									printf("Did not receive ACK...trying again\n");
-									continue;
-									//perror("Did not receive ACK");
-									//return 0;
-								}
-								//	printf("ack.hp.opcode==%d = 0 && ack.hp.sequenceNumber == %d == %d\n", ack.hp.opcode, ack.hp.sequenceNumber, packets[count].hp.sequenceNumber);
-								/* Check if ACK packet contains same sequenceNumber */
-								if (ack.hp.opcode == 0 && ack.hp.sequenceNumber == packet.hp.sequenceNumber) {
-									//++count; // Successfully sent out packet
-									break;
-								}
-						}
-					}
-				break;
-			case 1:
-				{
-					Packet packet;
-					Packet ack;
-					
-					if (count != 0) {
-							packet.hp.opcode = 1; // Make packets WRQ
-							packet.hp.sequenceNumber = count; // Order by index
-							memset(packet.data, 0, MAX); // zero out char array
-							//printf("%s\n",packets[count].data);
-					}
-					else {
-						packet.hp.opcode = 2; // Make packet[0]  RRQ
-						packet.hp.sequenceNumber = count; // Order by index
-						memset(packet.data, 0, MAX); // zero out char array
-
-
-						/* packet[0].data => "<filename>\t<filesize>"*/
-						strcat(packet.data, filename); 
-						strcat(packet.data, "\t");
-						
-						char * str = malloc (sizeof (char *));
-
-						sprintf(str, "%d", totalpackets);
-						strcat(packet.data, "\t");
-						strcat(packet.data, str);
-						
-						sprintf(str, "%d", remainder);
-						strcat(packet.data, "\t");
-						strcat(packet.data, str);
-						
-						free(str);
-					}
-					//printf("count=%lu\n", count);
-	#if 0
-					// Reading the binary file
-					if (count != 0) {
-						if (count == totalpackets - 1 && remainder > 0) {
-							fread(packet.data, 1, remainder, fptr);
-						}
-						else {	fread(packet.data, 1, MAX - 1, fptr); }
-						printf("%lu\n", strlen(packet.data));
-						//return 0;
-					}
-	#endif
-		
-	//				while (strlen(packet.data) < MAX - 1 && count != 0) {
-					if (count != 0) {
-						char buffer[MAX];
-						memset(buffer, 0, MAX-1);
-
-						//char buff[MAX];
-
-						if (count == totalpackets - 1 && remainder > 0) {
-							fread(buffer, 1, remainder, fptr);
-						}
-						else {
-							fread(buffer, 1, MAX-1, fptr);
-						}
-
-						//unsigned int len = strlen(packet.data);
-						if (count == totalpackets-1 && remainder > 0) {
-							memcpy(packet.data, buffer, remainder);
-							//break;
-						}
-						else {
-							memcpy(packet.data, buffer, MAX-1);
-						}
-						//printf("%d\n", count);
-					}
-
-					//printf("strlen of packet.data=%d\n", strlen(packet.data));
-					
-					// Now we send the packet and wait for an ACK (loop until ACK found)
-					while (1) {
-						//printf("%lu\n", sizeof packets[count].data);
-						/* Sending data to server using packets */
-						if ((bytes = sendto (sockfd, &packet, sizeof packet, 0, (struct sockaddr *)&servaddr, alen)) == -1) {
-							perror("sendto, client-side");
-							close(sockfd);
-							return 0;
-						}
-
-						//printf("Sent to client\n");
-						
-						/* Waiting for ACK from server */
-						if ((bytes = recvfrom (sockfd, &ack, sizeof ack, 0, (struct sockaddr *)&servaddr, &alen)) == -1) {
-							printf("Did not receive ACK...trying again\n");
-							continue;
-							//perror("Did not receive ACK");
-							//return 0;
-						}
-						//	printf("ack.hp.opcode==%d = 0 && ack.hp.sequenceNumber == %d == %d\n", ack.hp.opcode, ack.hp.sequenceNumber, packets[count].hp.sequenceNumber);
-						
-						/* Check if ACK packet contains same sequenceNumber */
-						if (ack.hp.opcode == 0 && ack.hp.sequenceNumber == packet.hp.sequenceNumber) {
-							//++count; // Successfully sent out packet
-							break;
-						}
-					}
-
-				}
-#if 0
-				// Reading a binary file
-				while (strlen(packets[count].data) < MAX-1) {
-					char buff[MAX];
-					fread (buff, 1, 1, fptr);
-					unsigned int len = strlen(packets[count].data);
-					//strcat(packets[count].data, buff);
-					
-					//printf("%lu\n", strlen(buff));
-					memcpy(packets[count].data + len, buff, strlen(buff));
-					
-					//return;
-					if (count == totalpackets - 1 && strlen(packets[count].data) > remainder - 1) {
-						break;
-					}
-				}
-				break;
-#endif
-				break;
-			default:
-				return 0;
+			char * str = malloc (sizeof (char *)); // Used to hold converted integer data
+	
+			sprintf(str, "%d", totalpackets); 	// convert totalpackets into a string
+			strcat(packet.data, "\t");	
+			strcat(packet.data, str);
+				
+			sprintf(str, "%d", remainder);		// convert remainder into a string
+			strcat(packet.data, "\t");
+			strcat(packet.data, str);
+				
+			free(str);
 		}
-		++count; // only move on to next packet when 'data' array has been filled up completely
-	}
-//	for (count = 0; count < totalpackets; ++count) {
-//		printf("\ncount=%d, opcode=%d, seqnum=", count, packets[count].hp.opcode); // Make packets WRQ
-//		printf("%d, data size=%lu\n", packets[count].hp.sequenceNumber, strlen(packets[count].data)); // Order by index
-//		//printf("%s", packets[count].data);
-//	}
+		else {
+			/* Here we are transferring file data into packet */
+			packet.hp.opcode = 1; // Make packets WRQ
+			packet.hp.sequenceNumber = count; // Order by index
+			memset(packet.data, 0, MAX); // zero out char array	
+			
+			// If we are at our last packet AND filesize is not evenly divisible by MAX-1 we read remainder bytes
+			if (count == totalpackets - 1 && remainder > 0) {
+				fread(packet.data, 1, remainder, fptr);
+			}
+			// Otherwise we read in MAX-1 bytes (we subtract 1 to leave room for the null terminator in our data array)
+			else {
+				fread(packet.data, 1, MAX-1, fptr);	
+			}
+		}
 
-#if NDEBUG
-	count = 0;
-	while (count < totalpackets) {
-		printf("sizeof packets[%d].data = %lu\n", count, strlen(packets[count].data));
-		if (count == 0)	printf("%s\n", packets[count].data);
-		++count;
-	}
-#endif
-
-#if 0
-	/* Step 1: Create the socket */
-	if ((sockfd = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
-		perror ("cannot create socket");
-		close(sockfd);
-		return 0;
-	}
-	
-	// Make the recvfrom sockfd[1] able to timeout
-	if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) < 0) {
-		perror ("setsockopt failed");
-		close(sockfd);
-		return 0;
-	}
-
-	/* Step 2. Get server information */
-	hp = gethostbyname(hostname); // lookup address by hostname
-	if (!hp) {
-		printf ("gethostbyname: failed to get address given hostname");
-		close(sockfd);
-		return 0;
-	}
-	
-	/* Setup the sockaddr_in struct */
-	memset ((char *)&servaddr, 0, sizeof(servaddr));
-	servaddr.sin_family = AF_INET; 	// This means ipv4 address
-	servaddr.sin_port = htons(port);	// converting port to a short/network byte order
-	memcpy ((void *)&servaddr.sin_addr, hp->h_addr_list[0], hp->h_length); 	// now we can put the host's address into the servaddr struct
-	
-	printf("Server Host Name: %s\n", hp->h_name);
-	
-	alen = sizeof (servaddr);
-		
-
-	/* Step 3: Send filename and filesize to server using packet */
-	//if ((bytes = sendto(sockfd, &packets[0], sizeof (packets[0]), 0, ((struct sockaddr *)&servaddr), alen)) == -1) {
-	//	perror("sendto");
-	//	close(sockfd);
-	//	return 0;
-	//}
-
-	printf("\n-----------%s----------\n", filename);
-
-//return 0;
-	/* Step 4: Send packets to the server */
-	count = 0;
-		do {
-			//printf("%lu\n", sizeof packets[count].data);
-			Packet ack;
-			/* Sending data to server using packets */
-			if ((bytes = sendto (sockfd, &packets[count], sizeof packets[count], 0, (struct sockaddr *)&servaddr, alen)) == -1) {
+		// Now we send the packet and wait for an ACK (loop until ACK found)
+		while (1) {
+			/* Sending packet to server */
+			if (sendto (sockfd, &packet, sizeof packet, 0, (struct sockaddr *)&servaddr, alen) == -1) {
 				perror("sendto, client-side");
 				close(sockfd);
 				return 0;
 			}
 
-			//printf("Sent to client\n");
-			/* TODO: add a time-out mechanism using pthreads */
-			/* Waiting for ACK from server */
+			/* Waiting for ACK packet from server */
 			if ((bytes = recvfrom (sockfd, &ack, sizeof ack, 0, (struct sockaddr *)&servaddr, &alen)) == -1) {
 				printf("Did not receive ACK...trying again\n");
 				continue;
-				//perror("Did not receive ACK");
-				//return 0;
 			}
-		//	printf("ack.hp.opcode==%d = 0 && ack.hp.sequenceNumber == %d == %d\n", ack.hp.opcode, ack.hp.sequenceNumber, packets[count].hp.sequenceNumber);
+				
 			/* Check if ACK packet contains same sequenceNumber */
-			if (ack.hp.opcode == 0 && ack.hp.sequenceNumber == packets[count].hp.sequenceNumber) {
-				++count; // Successfully sent out packet
+			if (ack.hp.opcode == 0 && ack.hp.sequenceNumber == packet.hp.sequenceNumber) {
+				break;
 			}
-		//	printf("count=%d=%d\n",count, totalpackets);
-		} while (count < totalpackets);
-#endif
+		}
+		++count;
+	}	
+
+	/* Step 5: Tell server to stop waiting for packets */
 	Packet dummy;
 	dummy.hp.opcode = 0;
-	/* Step 5: Tell server to stop waiting for packets */
 	if ((bytes = sendto(sockfd, &dummy, sizeof dummy, 0, ((struct sockaddr *)&servaddr), alen)) == -1) {
 		perror("sendto");
 		return 0;
