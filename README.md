@@ -11,12 +11,12 @@ nicholasvallejos_server.c - all server-side code
 <br/>packet.h - header file that includes two structs (Header and Packet) and a macro called MAX. This file is used by server.c and <br/>client.c (more info in the file).
 
 # How to compile code
-<br/>Simply run "make" and two executables will be made: server & client
+Simply run "make" and two executables will be made: server & client
 
 # How to run the code (on a Bash terminal)
-<br/>Run ./server [port #]
-<br/>The server hostname will be displayed in terminal
-<br/>Then in another terminal, run ./client [filename] [serverhostname] [port #]
+1. Run ./server [port #]<br/>
+2. The server hostname will be displayed in terminal<br/>
+3. Then in another terminal, run ./client [filename] [serverhostname] [port #]
 
 # BEFORE RUNNING THE CODE 
 ***WARNING***
