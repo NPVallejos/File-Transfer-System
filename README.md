@@ -1,4 +1,5 @@
-# File-Transfer-System
+# Purpose
+To further explore network programming, particularly how to implement a UDP connection and learn more about its benefits over a TCP connection.
 
 # Completion status
 This program can successfully read and write binary files (i.e. .txt, .mp4, .bin, etc)
