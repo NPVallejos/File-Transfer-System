@@ -2,7 +2,7 @@
 To further explore network programming, particularly how to implement a UDP connection and learn more about its benefits over a TCP connection.
 
 # Completion status
-This program can successfully read and write binary files (i.e. .txt, .mp4, .bin, etc)
+This program can successfully read and write any type of file (i.e. .txt, .mp4, .bin, etc)
 <br/>This program can successfully read files of any size (Fixed seg fault issue by not storing packets in an array of Packet's)
 
 # My code
